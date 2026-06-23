@@ -552,25 +552,32 @@ function SearchBar({ onSelect, disabled }) {
 /* ThemeToggle                                                            */
 /* ----------------------------------------------------------------------- */
 
-function LogoMark({ size = 30 }) {
+function LogoMark({ size = 32 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" className="logo-mark" aria-hidden="true">
       <defs>
-        <radialGradient id="logoSphere" cx="35%" cy="30%" r="75%">
-          <stop offset="0%" stopColor="#9fe7ff" />
-          <stop offset="55%" stopColor="#3b8fe0" />
-          <stop offset="100%" stopColor="#0d3a73" />
+        <radialGradient id="logoSphere" cx="32%" cy="26%" r="80%">
+          <stop offset="0%" stopColor="#eafdff" />
+          <stop offset="35%" stopColor="#62c8ff" />
+          <stop offset="72%" stopColor="#1f7fd1" />
+          <stop offset="100%" stopColor="#0a2f63" />
         </radialGradient>
+        <linearGradient id="logoRing" x1="0%" y1="50%" x2="100%" y2="50%">
+          <stop offset="0%" stopColor="#4fc3f7" stopOpacity="0" />
+          <stop offset="50%" stopColor="#cdf4ff" stopOpacity="0.95" />
+          <stop offset="100%" stopColor="#4fc3f7" stopOpacity="0" />
+        </linearGradient>
       </defs>
-      <circle cx="20" cy="20" r="17" fill="url(#logoSphere)" />
-      <g stroke="rgba(255,255,255,0.5)" strokeWidth="1" fill="none">
-        <ellipse cx="20" cy="20" rx="17" ry="6.4" />
-        <ellipse cx="20" cy="20" rx="8.4" ry="17" />
-        <line x1="3" y1="20" x2="37" y2="20" />
+      <ellipse cx="20" cy="20" rx="23" ry="7.5" fill="none" stroke="url(#logoRing)" strokeWidth="1.3" transform="rotate(-14 20 20)" />
+      <circle cx="20" cy="20" r="16" fill="url(#logoSphere)" />
+      <g stroke="rgba(255,255,255,0.4)" strokeWidth="0.9" fill="none">
+        <ellipse cx="20" cy="20" rx="16" ry="6" />
+        <ellipse cx="20" cy="20" rx="8" ry="16" />
+        <line x1="4" y1="20" x2="36" y2="20" />
       </g>
-      <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1" />
+      <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
       <g className="logo-orbit">
-        <circle cx="20" cy="1.4" r="1.7" fill="#eafeff" />
+        <circle cx="20" cy="2" r="1.7" fill="#eafeff" />
       </g>
     </svg>
   )
@@ -1242,7 +1249,10 @@ export default function WeatherApp() {
       <header className="app-header">
         <div className="brand">
           <LogoMark />
-          <span className="brand-name">WeatherWorld</span>
+          <span className="brand-name">
+            <span className="bn-light">Weather</span>
+            <span className="bn-bold">World</span>
+          </span>
         </div>
         <SearchBar onSelect={selectFromSearch} disabled={loading} />
         <ThemeToggle theme={theme} onToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} />
@@ -1323,6 +1333,10 @@ const STYLES = `
   padding: 10px 20px; border-radius: 999px; font-size: 13px; color: var(--text);
   background: var(--header-bg); backdrop-filter: blur(16px); border: 1px solid var(--border);
   animation: fadeIn 0.6s ease both; pointer-events: none; white-space: nowrap;
+  max-width: calc(100vw - 32px); text-align: center;
+}
+@media (max-width: 420px) {
+  .idle-hint { white-space: normal; border-radius: 16px; font-size: 12px; }
 }
 
 /* ---------- Header ---------- */
@@ -1332,13 +1346,19 @@ const STYLES = `
   background: var(--header-bg); backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.logo-mark { display: block; flex-shrink: 0; filter: drop-shadow(0 2px 8px rgba(79,195,247,0.45)); }
-.logo-orbit { transform-box: fill-box; transform-origin: center; animation: spin 7s linear infinite; }
-.brand-name {
-  font-family: 'Orbitron', sans-serif; font-size: 19px; font-weight: 700; letter-spacing: 0.01em;
-  background: linear-gradient(135deg, #9fe7ff, #4fc3f7 45%, #1e88e5);
+.brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.logo-mark {
+  display: block; flex-shrink: 0;
+  filter: drop-shadow(0 0 7px rgba(79,195,247,0.5)) drop-shadow(0 2px 6px rgba(0,0,0,0.35));
+}
+.logo-orbit { transform-box: view-box; transform-origin: 20px 20px; animation: spin 6s linear infinite; }
+.brand-name { font-family: 'Space Grotesk', sans-serif; font-size: 20px; letter-spacing: -0.01em; }
+.bn-light { font-weight: 400; color: var(--text); opacity: 0.85; }
+.bn-bold {
+  font-weight: 700; margin-left: 1px;
+  background: linear-gradient(135deg, #b9efff, #4fc3f7 45%, #1565c0);
   -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: 0 0 18px rgba(79,195,247,0.35);
 }
 
 /* ---------- Search ---------- */
@@ -1349,6 +1369,7 @@ const STYLES = `
   width: 100%; padding: 10px 42px 10px 42px; border-radius: 24px;
   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
   color: var(--text); font-size: 14px; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
 }
 .weather-app[data-theme="light"] .search-input { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.12); }
 .search-input::placeholder { color: var(--muted); }
@@ -1529,7 +1550,7 @@ const STYLES = `
   .search-inner { width: 320px; }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px) and (orientation: portrait) {
   .app-header { flex-wrap: wrap; height: auto; padding: 10px 16px; gap: 8px; }
   .search-bar-wrap { order: 3; flex-basis: 100%; }
   .search-inner { width: 100%; }
@@ -1547,5 +1568,23 @@ const STYLES = `
     display: block; width: 40px; height: 4px; border-radius: 999px; background: var(--muted);
     margin: 0 auto 14px; opacity: 0.4; touch-action: none;
   }
+}
+
+/* Short landscape (phones rotated, small laptops with short windows): keep the
+   sidebar pattern instead of a bottom sheet, since vertical space is the scarce
+   resource there, not horizontal. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .app-header { height: 50px; padding: 0 14px; gap: 10px; }
+  .brand-name { font-size: 15px; }
+  .logo-mark { width: 24px; height: 24px; }
+  .search-inner { width: 220px; }
+  .idle-hint { bottom: 12px; padding: 6px 14px; font-size: 12px; }
+  .toast { top: 60px; }
+
+  .weather-panel { width: 270px; padding: 62px 16px 20px; }
+  .panel-close { top: 58px; width: 26px; height: 26px; }
+  .panel-header { padding-right: 20px; }
+  .current-block { padding: 12px 6px 14px; }
+  .temp-main { font-size: 48px; }
 }
 `
