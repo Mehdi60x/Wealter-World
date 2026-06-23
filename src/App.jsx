@@ -14,6 +14,28 @@ function latLonToVector3(lat, lon, radius = 1) {
   }
 }
 
+const CAMERA_FOV_DEG = 45
+
+// Picks a camera distance so the globe (radius 1) always fits within the
+// viewport's smaller dimension, instead of being sized off height alone
+// (which overflows the width on tall/narrow portrait screens).
+function computeCameraDistances(width, height) {
+  const halfFovRad = (CAMERA_FOV_DEG * Math.PI) / 360
+  const minDim = Math.min(width, height)
+
+  function distanceForFraction(fraction) {
+    const targetRadiusPx = minDim * fraction
+    const ndc = targetRadiusPx / (height / 2)
+    const angle = ndc * halfFovRad
+    return 1 / Math.tan(angle)
+  }
+
+  return {
+    baseZ: Math.max(1.6, distanceForFraction(0.4)),
+    zoomZ: Math.max(1, distanceForFraction(0.66)),
+  }
+}
+
 function vectorToLatLon(v) {
   const r = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
   const lat = 90 - (Math.acos(v.y / r) * 180) / Math.PI
@@ -42,6 +64,12 @@ function degToCompass(deg) {
   if (deg === undefined || deg === null) return '—'
   const idx = Math.round(deg / 22.5) % 16
   return `${COMPASS[idx]} ${Math.round(deg)}°`
+}
+
+function formatCoord(lat, lon) {
+  const latDir = lat >= 0 ? 'N' : 'S'
+  const lonDir = lon >= 0 ? 'E' : 'O'
+  return `${Math.abs(lat).toFixed(2)}°${latDir} ${Math.abs(lon).toFixed(2)}°${lonDir}`
 }
 
 function hexToRgba(hex, alpha) {
@@ -383,20 +411,20 @@ function WeatherIcon({ code, size = 80 }) {
 
 function StatCard({ emoji, label, value, index = 0 }) {
   return (
-    <div className="stat-card stagger-in" style={{ animationDelay: `${index * 50}ms` }}>
+    <div className="stat-card hud-frame stagger-in" style={{ animationDelay: `${index * 50}ms` }}>
       <span className="stat-label">{emoji} {label}</span>
-      <span className="stat-value">{value}</span>
+      <span className="stat-value mono">{value}</span>
     </div>
   )
 }
 
 function ForecastCard({ label, code, max, min, index = 0 }) {
   return (
-    <div className="forecast-card stagger-in" style={{ animationDelay: `${index * 50}ms` }}>
+    <div className="forecast-card hud-frame stagger-in" style={{ animationDelay: `${index * 50}ms` }}>
       <span className="forecast-day">{label}</span>
       <WeatherIcon code={code} size={32} />
-      <span className="forecast-max">{Math.round(max)}°</span>
-      <span className="forecast-min">{Math.round(min)}°</span>
+      <span className="forecast-max mono">{Math.round(max)}°</span>
+      <span className="forecast-min mono">{Math.round(min)}°</span>
     </div>
   )
 }
@@ -583,6 +611,58 @@ function LogoMark({ size = 32 }) {
   )
 }
 
+const BOOT_SEQUENCE = [
+  'INITIALISATION DU SYSTÈME...',
+  'CHARGEMENT DES TEXTURES SATELLITE...',
+  'CALIBRATION DE L’ATMOSPHÈRE...',
+  'ÉTABLISSEMENT DE LA LIAISON...',
+  'SYNCHRONISATION ORBITALE...',
+]
+
+function BootSequence({ ready }) {
+  const [step, setStep] = useState(0)
+
+  useEffect(() => {
+    if (ready) return
+    const id = setInterval(() => {
+      setStep((s) => (s + 1 < BOOT_SEQUENCE.length ? s + 1 : s))
+    }, 650)
+    return () => clearInterval(id)
+  }, [ready])
+
+  return (
+    <div className={`boot-overlay ${ready ? 'hidden' : ''}`} aria-hidden={ready}>
+      <div className="boot-frame hud-frame">
+        <div className="boot-spinner" />
+        <p className="mono boot-line">{BOOT_SEQUENCE[step]}</p>
+        <div className="boot-progress">
+          <div className="boot-progress-fill" style={{ width: `${((step + 1) / BOOT_SEQUENCE.length) * 100}%` }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TelemetryStatus() {
+  const [utc, setUtc] = useState('')
+
+  useEffect(() => {
+    function tick() {
+      setUtc(new Date().toISOString().slice(11, 19))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="telemetry-status mono">
+      <span className="telemetry-dot" />
+      LIVE · {utc} UTC
+    </div>
+  )
+}
+
 function ThemeToggle({ theme, onToggle }) {
   return (
     <button className="theme-toggle" onClick={onToggle} aria-label="Changer de thème" type="button">
@@ -636,7 +716,7 @@ function WeatherPanel({ open, city, weather, aqi, loading, error, dragOffset, on
 
   return (
     <aside
-      className={`weather-panel ${open ? 'open' : ''}`}
+      className={`weather-panel hud-frame ${open ? 'open' : ''}`}
       style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined}
     >
       <div className="panel-handle" onPointerDown={onHandleDown} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp} />
@@ -646,18 +726,23 @@ function WeatherPanel({ open, city, weather, aqi, loading, error, dragOffset, on
         <div className="panel-header">
           <div className="panel-title">
             <span className="flag-emoji">{countryCodeToFlag(city.countryCode)}</span>
-            {city.name === 'Recherche...' ? (
-              <span className="sk sk-name-line" />
-            ) : (
-              <span className="city-name">
-                {city.name}
-                {city.country ? `, ${city.country}` : ''}
-              </span>
-            )}
+            <div className="panel-title-col">
+              {city.name === 'Recherche...' ? (
+                <span className="sk sk-name-line" />
+              ) : (
+                <>
+                  <span className="city-name">
+                    {city.name}
+                    {city.country ? `, ${city.country}` : ''}
+                  </span>
+                  <span className="coord-readout mono muted">{formatCoord(city.lat, city.lon)}</span>
+                </>
+              )}
+            </div>
           </div>
           {weather && (
-            <div className="panel-clock muted">
-              🕐 {localTime} <span className="weekday">· {weekday}</span>
+            <div className="panel-clock muted mono">
+              {localTime} <span className="weekday">· {weekday}</span>
             </div>
           )}
         </div>
@@ -685,9 +770,9 @@ function WeatherPanel({ open, city, weather, aqi, loading, error, dragOffset, on
 
       {!error && !loading && weather && info && (
         <>
-          <div className="current-block" style={{ '--mood-color': hexToRgba(info.color, 0.28) }}>
+          <div className="current-block hud-frame" style={{ '--mood-color': hexToRgba(info.color, 0.28) }}>
             <WeatherIcon code={weather.current.code} size={80} />
-            <div className="temp-main">
+            <div className="temp-main mono">
               <AnimatedTemp value={weather.current.temp} />
             </div>
             <div className="condition-label muted">{info.label}</div>
@@ -733,7 +818,7 @@ function WeatherPanel({ open, city, weather, aqi, loading, error, dragOffset, on
                 <div className="aqi-bar">
                   <div className="aqi-fill" style={{ width: `${Math.min((aqi / 300) * 100, 100)}%`, background: aq.color }} />
                 </div>
-                <span className="aqi-text">{aq.label} · IQA {aqi}</span>
+                <span className="aqi-text mono">{aq.label} · IQA {aqi}</span>
               </div>
             </div>
           )}
@@ -770,6 +855,7 @@ const THEMES = {
 }
 
 const THREE_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
+const NIGHT_URL = 'https://unpkg.com/three-globe/example/img/earth-night.jpg'
 const BUMP_URL = 'https://unpkg.com/three-globe/example/img/earth-topology.png'
 const SPEC_URL = 'https://unpkg.com/three-globe/example/img/earth-water.png'
 const CLOUDS_URL = 'https://unpkg.com/three-globe/example/clouds/clouds.png'
@@ -823,54 +909,68 @@ export default function WeatherApp() {
       const height = window.innerHeight
 
       const scene = new THREE.Scene()
-      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000)
-      camera.position.z = 2.8
+      const camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, width / height, 0.1, 1000)
+      const initialDistances = computeCameraDistances(width, height)
+      camera.position.z = initialDistances.baseZ
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       renderer.setSize(width, height)
       renderer.shadowMap.enabled = true
       renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      renderer.outputEncoding = THREE.sRGBEncoding
+      renderer.toneMapping = THREE.ACESFilmicToneMapping
+      renderer.toneMappingExposure = 1.15
       container.appendChild(renderer.domElement)
 
-      const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.6)
+      const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.9)
       sunLight.position.set(5, 3, 5)
       sunLight.castShadow = true
       scene.add(sunLight)
 
-      const ambientLight = new THREE.AmbientLight(0x1a2744, 0.4)
+      const ambientLight = new THREE.AmbientLight(0x1a2744, 0.55)
       scene.add(ambientLight)
 
-      const pointLight = new THREE.PointLight(0x0044aa, 0.2)
+      const pointLight = new THREE.PointLight(0x0044aa, 0.25)
       pointLight.position.set(-5, -3, -5)
       scene.add(pointLight)
 
       const loader = new THREE.TextureLoader()
       loader.crossOrigin = 'anonymous'
+      const maxAnisotropy = renderer.capabilities.getMaxAnisotropy()
 
-      const [earthTexture, bumpTexture, specularTexture, cloudsTexture] = await Promise.all([
+      const [earthTexture, nightTexture, bumpTexture, specularTexture, cloudsTexture] = await Promise.all([
         loader.loadAsync(THEMES[theme].earthUrl),
+        loader.loadAsync(NIGHT_URL),
         loader.loadAsync(BUMP_URL),
         loader.loadAsync(SPEC_URL),
         loader.loadAsync(CLOUDS_URL),
       ])
       if (disposed) return
 
-      const globeGeo = new THREE.SphereGeometry(1, 64, 64)
+      earthTexture.encoding = THREE.sRGBEncoding
+      earthTexture.anisotropy = maxAnisotropy
+      nightTexture.anisotropy = maxAnisotropy
+      cloudsTexture.anisotropy = maxAnisotropy
+
+      const globeGeo = new THREE.SphereGeometry(1, 96, 96)
       const globeMat = new THREE.MeshPhongMaterial({
         map: earthTexture,
         bumpMap: bumpTexture,
         bumpScale: 0.05,
         specularMap: specularTexture,
         specular: new THREE.Color(0x333333),
-        shininess: 15,
+        shininess: 18,
+        emissiveMap: nightTexture,
+        emissive: new THREE.Color(0xffffff),
+        emissiveIntensity: 0.55,
       })
       const globe = new THREE.Mesh(globeGeo, globeMat)
       globe.castShadow = true
       globe.receiveShadow = true
       scene.add(globe)
 
-      const cloudsGeo = new THREE.SphereGeometry(1.01, 64, 64)
+      const cloudsGeo = new THREE.SphereGeometry(1.01, 72, 72)
       const cloudsMat = new THREE.MeshLambertMaterial({ map: cloudsTexture, transparent: true, opacity: 0.4, depthWrite: false })
       const clouds = new THREE.Mesh(cloudsGeo, cloudsMat)
       scene.add(clouds)
@@ -927,6 +1027,8 @@ export default function WeatherApp() {
         marker: null,
         autoRotate: true,
         viewOffsetOpen: false,
+        baseZ: initialDistances.baseZ,
+        zoomZ: initialDistances.zoomZ,
         container,
         loader,
       }
@@ -945,6 +1047,8 @@ export default function WeatherApp() {
           t.marker.ring.material.opacity = 0.3 + pulse * 0.7
           t.globe.updateMatrixWorld(true)
           t.marker.ring.lookAt(t.camera.position)
+          t.marker.reticle.lookAt(t.camera.position)
+          t.marker.reticle.rotateZ(0.012)
 
           if (label) {
             t.marker.dot.getWorldPosition(tmpVec)
@@ -979,6 +1083,10 @@ export default function WeatherApp() {
       const h = window.innerHeight
       t.camera.aspect = w / h
       t.renderer.setSize(w, h)
+      const distances = computeCameraDistances(w, h)
+      t.baseZ = distances.baseZ
+      t.zoomZ = distances.zoomZ
+      t.camera.position.z = t.viewOffsetOpen ? t.zoomZ : t.baseZ
       if (t.viewOffsetOpen) {
         t.camera.setViewOffset(w, h, -160, 0, w, h)
       } else {
@@ -1011,6 +1119,8 @@ export default function WeatherApp() {
     if (!t) return
     const conf = THEMES[theme]
     t.loader.loadAsync(conf.earthUrl).then((tex) => {
+      tex.encoding = t.THREE.sRGBEncoding
+      tex.anisotropy = t.renderer.capabilities.getMaxAnisotropy()
       t.globe.material.map = tex
       t.globe.material.needsUpdate = true
     })
@@ -1076,10 +1186,15 @@ export default function WeatherApp() {
     if (t.marker) {
       globe.remove(t.marker.ring)
       globe.remove(t.marker.dot)
+      globe.remove(t.marker.reticle)
       t.marker.ring.geometry.dispose()
       t.marker.ring.material.dispose()
       t.marker.dot.geometry.dispose()
       t.marker.dot.material.dispose()
+      t.marker.reticle.children.forEach((m) => {
+        m.geometry.dispose()
+        m.material.dispose()
+      })
     }
     const ringGeo = new THREE.RingGeometry(0.01, 0.025, 32)
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, side: THREE.DoubleSide, opacity: 1 })
@@ -1087,12 +1202,25 @@ export default function WeatherApp() {
     const dotGeo = new THREE.SphereGeometry(0.008, 8, 8)
     const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
     const dot = new THREE.Mesh(dotGeo, dotMat)
+
+    // Targeting-reticle: four short arc ticks orbiting the marker, NASA tracking-radar style.
+    const reticle = new THREE.Group()
+    const tickMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+    for (let i = 0; i < 4; i++) {
+      const tickGeo = new THREE.RingGeometry(0.032, 0.036, 10, 1, 0, Math.PI / 5)
+      const tick = new THREE.Mesh(tickGeo, tickMat)
+      tick.rotation.z = (i * Math.PI) / 2
+      reticle.add(tick)
+    }
+
     const pos = latLonToVector3(lat, lon, 1.01)
     ring.position.set(pos.x, pos.y, pos.z)
     dot.position.set(pos.x, pos.y, pos.z)
+    reticle.position.set(pos.x, pos.y, pos.z)
     globe.add(ring)
     globe.add(dot)
-    t.marker = { ring, dot }
+    globe.add(reticle)
+    t.marker = { ring, dot, reticle }
   }, [])
 
   const removeMarker = useCallback(() => {
@@ -1100,11 +1228,47 @@ export default function WeatherApp() {
     if (!t || !t.marker) return
     t.globe.remove(t.marker.ring)
     t.globe.remove(t.marker.dot)
+    t.globe.remove(t.marker.reticle)
     t.marker.ring.geometry.dispose()
     t.marker.ring.material.dispose()
     t.marker.dot.geometry.dispose()
     t.marker.dot.material.dispose()
+    t.marker.reticle.children.forEach((m) => {
+      m.geometry.dispose()
+      m.material.dispose()
+    })
     t.marker = null
+  }, [])
+
+  // Brief expanding ring at the exact click point — confirms the click
+  // registered before the rotation/zoom animation kicks in.
+  const spawnClickRipple = useCallback((lat, lon) => {
+    const t = threeRef.current
+    if (!t) return
+    const { THREE, globe, camera } = t
+    const geo = new THREE.RingGeometry(0.001, 0.012, 24)
+    const mat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+    const ripple = new THREE.Mesh(geo, mat)
+    const pos = latLonToVector3(lat, lon, 1.012)
+    ripple.position.set(pos.x, pos.y, pos.z)
+    globe.add(ripple)
+    const start = performance.now()
+    const duration = 650
+    function step() {
+      const p = Math.min((performance.now() - start) / duration, 1)
+      ripple.scale.setScalar(1 + p * 7)
+      mat.opacity = 0.9 * (1 - p)
+      globe.updateMatrixWorld(true)
+      ripple.lookAt(camera.position)
+      if (p < 1) {
+        requestAnimationFrame(step)
+      } else {
+        globe.remove(ripple)
+        geo.dispose()
+        mat.dispose()
+      }
+    }
+    step()
   }, [])
 
   /* ----- City selection flow ----- */
@@ -1135,7 +1299,7 @@ export default function WeatherApp() {
       setPanelOpen(true)
       rotateGlobeTo(loc.lat, loc.lon)
       addMarker(loc.lat, loc.lon)
-      animateCameraZ(1.7, 100)
+      animateCameraZ(threeRef.current?.zoomZ ?? 1.7, 100)
       applyViewOffset(true)
       loadWeatherFor(loc.lat, loc.lon, requestId)
     },
@@ -1153,7 +1317,7 @@ export default function WeatherApp() {
       setPanelOpen(true)
       rotateGlobeTo(lat, lon)
       addMarker(lat, lon)
-      animateCameraZ(1.7, 100)
+      animateCameraZ(threeRef.current?.zoomZ ?? 1.7, 100)
       applyViewOffset(true)
       try {
         const addr = await reverseGeocode(lat, lon)
@@ -1180,15 +1344,16 @@ export default function WeatherApp() {
       const worldPoint = hits[0].point.clone()
       const localPoint = globe.worldToLocal(worldPoint)
       const { lat, lon } = vectorToLatLon(localPoint)
+      spawnClickRipple(lat, lon)
       selectFromGlobeClick(lat, lon)
     },
-    [selectFromGlobeClick]
+    [selectFromGlobeClick, spawnClickRipple]
   )
 
   const closePanel = useCallback(() => {
     setPanelOpen(false)
     setDragOffset(0)
-    animateCameraZ(2.8, 80)
+    animateCameraZ(threeRef.current?.baseZ ?? 2.8, 80)
     applyViewOffset(false)
     removeMarker()
     requestIdRef.current += 1
@@ -1231,16 +1396,14 @@ export default function WeatherApp() {
   return (
     <div className="weather-app" data-theme={theme} style={{ background: THEMES[theme].canvasBg }}>
       <style>{STYLES}</style>
+      <div className="scanlines" aria-hidden="true" />
       <div ref={containerRef} className={`globe-host ${sceneReady ? 'ready' : ''}`} onClick={handleCanvasClick} />
 
       <div ref={markerLabelRef} className="globe-label" aria-hidden="true">
         {city && city.name !== 'Recherche...' ? city.name : ''}
       </div>
 
-      <div className={`boot-overlay ${sceneReady ? 'hidden' : ''}`} aria-hidden={sceneReady}>
-        <div className="boot-spinner" />
-        <p>Chargement du globe…</p>
-      </div>
+      <BootSequence ready={sceneReady} />
 
       {sceneReady && !city && (
         <div className="idle-hint">🌍 Cliquez sur le globe ou recherchez une ville</div>
@@ -1255,6 +1418,7 @@ export default function WeatherApp() {
           </span>
         </div>
         <SearchBar onSelect={selectFromSearch} disabled={loading} />
+        <TelemetryStatus />
         <ThemeToggle theme={theme} onToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} />
       </header>
 
@@ -1304,8 +1468,16 @@ const STYLES = `
 }
 
 .weather-app { position: relative; width: 100%; height: 100vh; overflow: hidden; color: var(--text); transition: background 0.5s ease; }
+
+.scanlines {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none; mix-blend-mode: overlay; opacity: 0.5;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 3px);
+  animation: scan-drift 9s linear infinite;
+}
+@keyframes scan-drift { from { background-position: 0 0; } to { background-position: 0 120px; } }
+@media (prefers-reduced-motion: reduce) { .scanlines { animation: none; } }
 .weather-app * { box-sizing: border-box; }
-.globe-host { position: absolute; inset: 0; z-index: 0; cursor: pointer; opacity: 0; transition: opacity 0.8s ease; }
+.globe-host { position: absolute; inset: 0; z-index: 0; cursor: crosshair; opacity: 0; transition: opacity 0.8s ease; }
 .globe-host.ready { opacity: 1; }
 .globe-host canvas { display: block; }
 
@@ -1318,15 +1490,21 @@ const STYLES = `
 .weather-app[data-theme="light"] .globe-label { background: rgba(255,255,255,0.92); color: #0a1628; }
 
 .boot-overlay {
-  position: fixed; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 16px; color: var(--text); transition: opacity 0.6s ease, visibility 0.6s;
+  position: fixed; inset: 0; z-index: 6; display: flex; align-items: center;
+  justify-content: center; color: var(--text); transition: opacity 0.6s ease, visibility 0.6s;
 }
 .boot-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-.boot-overlay p { font-size: 13px; color: var(--muted); letter-spacing: 0.04em; }
+.boot-frame {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 32px 40px; border-radius: 8px; background: rgba(6,10,26,0.5); backdrop-filter: blur(8px);
+}
+.boot-line { font-size: 12px; color: var(--accent); letter-spacing: 0.06em; min-width: 280px; text-align: center; }
 .boot-spinner {
   width: 40px; height: 40px; border-radius: 50%; border: 3px solid rgba(79,195,247,0.2);
   border-top-color: var(--accent); animation: spin 0.9s linear infinite;
 }
+.boot-progress { width: 220px; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.boot-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #06b6d4); transition: width 0.4s ease; }
 
 .idle-hint {
   position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 40;
@@ -1360,6 +1538,15 @@ const STYLES = `
   -webkit-background-clip: text; background-clip: text; color: transparent;
   text-shadow: 0 0 18px rgba(79,195,247,0.35);
 }
+
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+.telemetry-status {
+  display: flex; align-items: center; gap: 7px; font-size: 11.5px; letter-spacing: 0.03em;
+  color: var(--muted); white-space: nowrap; flex-shrink: 0;
+}
+.telemetry-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; animation: blink 1.6s ease-in-out infinite; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 /* ---------- Search ---------- */
 .search-bar-wrap { flex: 1; display: flex; justify-content: center; }
@@ -1440,14 +1627,16 @@ const STYLES = `
 .panel-close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
 
 .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 0 26px 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-.panel-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.flag-emoji { font-size: 26px; line-height: 1; flex-shrink: 0; }
+.panel-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.panel-title-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.flag-emoji { font-size: 26px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
 .city-name { font-size: 20px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
-.panel-clock { font-size: 12.5px; white-space: nowrap; padding-top: 4px; }
+.coord-readout { font-size: 10.5px; letter-spacing: 0.03em; }
+.panel-clock { font-size: 12px; white-space: nowrap; padding-top: 4px; }
 .weekday { text-transform: capitalize; }
 
 .current-block {
-  text-align: center; padding: 22px 10px 24px; border-radius: 20px; margin-bottom: 8px;
+  position: relative; text-align: center; padding: 22px 10px 24px; border-radius: 20px; margin-bottom: 8px;
   background: radial-gradient(circle at 50% 0%, var(--mood-color, transparent) 0%, transparent 70%);
 }
 .temp-main {
@@ -1458,10 +1647,15 @@ const STYLES = `
 .condition-label { font-size: 14px; margin-top: 6px; }
 
 .panel-section { margin-top: 14px; }
-.section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--text); opacity: 0.75; margin: 0 0 12px; }
+.section-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); opacity: 0.85; margin: 0 0 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.section-label::before { content: ''; width: 8px; height: 1px; background: var(--accent); opacity: 0.7; }
 
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; transition: transform 0.2s, border-color 0.2s; }
+.stat-card { position: relative; background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; transition: transform 0.2s, border-color 0.2s; }
 .stat-card:hover { transform: translateY(-2px); border-color: rgba(79,195,247,0.3); }
 .stat-label { font-size: 12.5px; color: var(--muted); }
 .stat-value { font-size: 21px; font-weight: 600; }
@@ -1474,7 +1668,7 @@ const STYLES = `
 .stagger-in { animation: fadeInUp 0.4s ease both; }
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .forecast-card {
-  flex: 0 0 auto; width: 76px; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  position: relative; flex: 0 0 auto; width: 76px; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
   border-radius: 14px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
   transition: transform 0.2s, border-color 0.2s;
 }
@@ -1544,7 +1738,23 @@ const STYLES = `
 
 .muted { color: var(--muted); }
 
+/* ---------- HUD framing ---------- */
+/* Note: .hud-frame intentionally does NOT set a position property — it is
+   applied to elements (.weather-panel, .stat-card, .forecast-card,
+   .current-block) that already declare their own, so this utility can't
+   clobber it via cascade order. */
+.hud-frame::before, .hud-frame::after {
+  content: ''; position: absolute; width: 12px; height: 12px; pointer-events: none; z-index: 2;
+  border: 1.5px solid rgba(79,195,247,0.6);
+}
+.hud-frame::before { top: -1px; left: -1px; border-right: none; border-bottom: none; border-radius: 4px 0 0 0; }
+.hud-frame::after { bottom: -1px; right: -1px; border-left: none; border-top: none; border-radius: 0 0 4px 0; }
+
 /* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .telemetry-status { display: none; }
+}
+
 @media (max-width: 1200px) and (min-width: 769px) {
   .weather-panel { width: 300px; }
   .search-inner { width: 320px; }
